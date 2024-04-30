@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Body, HTTPException, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 
 app = FastAPI()
 
@@ -7,25 +7,22 @@ class Employee(BaseModel):
     id: int
     name: str
     age: int
+    email: EmailStr
+
 
 Employee_data = [
-    Employee(id=1, name='Anand', age=24),
-    Employee(id=2, name='Sandhya', age=22),
-    Employee(id=3, name='Surya', age=23),
+    Employee(id=1, name='Anand', age=24, email="anand@example.com"),
+    Employee(id=2, name='Sandhya', age=22, email="sandhya@example.com"),
+    Employee(id=3, name='Surya', age=23, email="surya@example.com"),
 ]
 
 
-@app.get("/hello")
-def hello():
-    return {"message": "Hello World"}
-
-
-@app.get("/all")
+@app.get("/employees")
 async def get_all_employees():
     return Employee_data
 
 
-@app.get("/{id}")
+@app.get("/employee/{id}")
 async def get_employee(id: int):
     try:
         return Employee_data[id - 1]
@@ -33,23 +30,28 @@ async def get_employee(id: int):
         raise HTTPException(status_code=404, detail=f"Employee with ID {id} not found")
 
 
-@app.put("/update/{employee_id}")
+@app.put("/employee/{employee_id}")
 async def update_employee(employee_id: int, updated_data: Employee = Body(...)):
     for i, employee in enumerate(Employee_data):
         if employee.id == employee_id:
+            if employee.id != updated_data.get("id"):
+                raise HTTPException(status_code=400, detail="ID cannot be updated through PUT requests")
             employee.update(updated_data)
             return {"message": "Employee updated successfully"}
     return {"message": "Employee not found"}
 
 
-@app.post("/insert")
+@app.post("/employee")
 async def add_employee(new_employee: Employee = Body(...)):
-    new_employee.id = max(employee.id for employee in Employee_data) + 1
-    Employee_data.append(new_employee)
-    return {"message": "Employee added successfully", "new_employee_id": new_employee.id}
+    try:
+        new_employee.id = max(employee.id for employee in Employee_data) + 1
+        Employee_data.append(new_employee)
+        return {"message": "Employee added successfully", "new_employee_id": new_employee.id}
+    except ValueError: 
+        raise HTTPException(status_code=422, detail="Invalid employee data")
 
 
-@app.delete("/delete/{employee_id}")
+@app.delete("/employee/{employee_id}")
 async def delete_employee(employee_id: int):
     for i, employee in enumerate(Employee_data):
         if employee.id == employee_id:
@@ -58,19 +60,11 @@ async def delete_employee(employee_id: int):
     return {"message": "Employee not found"}
 
 
-@app.patch("/update_patch/{employee_id}")
+@app.patch("/employee/{employee_id}")
 async def update_employee(employee_id: int, updated_data: dict[str, str]):
     employee_index = next((i for i, emp in enumerate(Employee_data) if emp.id == employee_id), None)
     if employee_index is None:
         raise HTTPException(status_code=404, detail=f"Employee with ID {employee_id} not found")
 
-    if not set(updated_data.keys()).issubset({"id", "name", "age"}):
-        raise HTTPException(status_code=400, detail=f"Invalid update keys: {', '.join(set(updated_data.keys()) - {'id', 'name', 'age'})}")
-
-    Employee_data[employee_index].update(updated_data)
-    return {"message": f"Employee with ID {employee_id} updated successfully"}
-
-
-@app.head("/head")
-async def head_endpoint():
-    return Response(status_code=200)
+    if not set(updated_data.keys()).issubset({"id", "name", "age", "email"}):
+        raise
