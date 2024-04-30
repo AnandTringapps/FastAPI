@@ -1,4 +1,4 @@
-from fastapi import FastAPI , Body
+from fastapi import FastAPI , Body, HTTPException
 
 app = FastAPI()
 
@@ -9,6 +9,8 @@ Employee_data=[
     {'id': 3,'name': 'surya', 'age': 23}
 ]
 
+VALID_EMPLOYEE_KEYS={"id","name","age"}
+
 @app.get("/hello")
 def hello():
     return {"message": "Hello World"}
@@ -16,6 +18,7 @@ def hello():
 @app.get("/all")
 async def get_all_employees():
     return Employee_data
+
 @app.get("/{id}")
 async def get_employee(id: int):
     return Employee_data[id-1]
@@ -44,5 +47,22 @@ async def delete_employee(employee_id: int):
             del Employee_data[i]  
             return {"message": "Employee deleted successfully"}
     return {"message": "Employee not found"}
+
+@app.patch("/update_patch/{employee_id}")
+async def update_employee(employee_id: int, updated_data: dict[str, str]):
+    employee_index = next((i for i, emp in enumerate(Employee_data) if emp["id"] == employee_id), None)
+    if employee_index is None:
+        raise HTTPException(status_code=404, detail=f"Employee with ID {employee_id} not found")
+
+    if not set(updated_data.keys()).issubset(VALID_EMPLOYEE_KEYS):
+        raise HTTPException(status_code=400, detail=f"Invalid update keys: {', '.join(set(updated_data.keys()) - VALID_EMPLOYEE_KEYS)}")
+
+    Employee_data[employee_index].update(updated_data)
+    return {"message": f"Employee with ID {employee_id} updated successfully"}
+
+@app.head("/head")
+async def head_endpoint():
+    return {"message": "This is a head-only endpoint"}
+
 
 
