@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Body, HTTPException, Response
+from fastapi import FastAPI, Body, HTTPException, Response,Header
 from pydantic import BaseModel, EmailStr
 
 app = FastAPI()
@@ -68,3 +68,24 @@ async def update_employee(employee_id: int, updated_data: dict[str, str]):
 
     if not set(updated_data.keys()).issubset({"id", "name", "age", "email"}):
         raise
+
+
+# #
+# @app.put("/employee/{employee_id}")
+# async def update_employee(employee_id: int, 
+#                           updated_data: Employee = Body(...),
+#                           x_auth_token: str = Header(...)):
+#   for i, employee in enumerate(Employee_data):
+#     if employee.id == employee_id:
+#       employee.update(updated_data)  
+#       return {"message": "Employee updated successfully"}
+#   return {"message": "Employee not found"}
+
+#soft delete
+@app.delete("/employee/{employee_id}")
+async def delete_employee(employee_id: int):
+  for i, employee in enumerate(Employee_data):
+    if employee.id == employee_id:
+      employee.is_deleted = True
+      return {"message": "Employee soft deleted successfully"}
+  return {"message": "Employee not found"}

@@ -7,7 +7,7 @@ __pycache__
 htmlcov
 dist
 site
-.fastapi
+fastapi
 .coverage
 coverage.xml
 .netlify

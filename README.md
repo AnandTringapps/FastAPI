@@ -1,6 +1,6 @@
 To create a venv for fast api
 
-cmd : 
+cmd : python -m venv my_env
 
 
 To activate the venv
