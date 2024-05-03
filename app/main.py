@@ -1,68 +1,132 @@
-from fastapi import FastAPI , Body, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from pydantic import BaseModel
+from datetime import datetime, timedelta
+from jose import JWTError, jwt
+from passlib.context import CryptContext
+
+SECRET_KEY = "83daa0256a2289b0fb23693bf1f6034d44396675749244721a2b20e896e11662"
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+
+db = {
+    "Anand": {
+        "username": "Anand",
+        "email": "anand@mail.com",
+        "hashed_password": "$2b$12$0L6qnznhUqw4shOBztUNBOe.dCJepz5LhQQvFMFhuUSAHcDh5DkPy",
+        "disabled": False
+    }
+}
+
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+
+class TokenData(BaseModel):
+    username: str or None = None
+
+
+class User(BaseModel):
+    username: str
+    email: str or None = None
+    disabled: bool or None = None
+
+
+class UserInDB(User):
+    hashed_password: str
+
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 app = FastAPI()
 
-Employee_data=[
-    
-    {'id': 1,'name': 'Anand', 'age': 24},
-    {'id': 2,'name': 'sandhya', 'age': 22},
-    {'id': 3,'name': 'surya', 'age': 23}
-]
 
-VALID_EMPLOYEE_KEYS={"id","name","age"}
-
-@app.get("/hello")
-def hello():
-    return {"message": "Hello World"}
-
-@app.get("/all")
-async def get_all_employees():
-    return Employee_data
-
-@app.get("/{id}")
-async def get_employee(id: int):
-    return Employee_data[id-1]
-
-@app.put("/update/{employee_id}")
-async def update_employee(employee_id: int, updated_data: dict):
-    for i, employee in enumerate(Employee_data):
-        if employee["id"] == employee_id:
-            employee.update(updated_data)
-            return {"message": "Employee updated successfully"}
-    return {"message": "Employee not found"}
-
-@app.post("/insert")
-async def add_employee(new_employee: dict = Body(...)):
-    new_id = max(employee_id["id"] for employee_id in Employee_data) + 1
-    new_employee["id"] = new_id
-    Employee_data.append(new_employee)
-
-    return {"message": "Employee added successfully", "new_employee_id": new_id}
+def verify_password(plain_password, hashed_password):
+    return pwd_context.verify(plain_password, hashed_password)
 
 
-@app.delete("/delete/{employee_id}")
-async def delete_employee(employee_id: int):
-    for i, employee in enumerate(Employee_data):
-        if employee["id"] == employee_id:
-            del Employee_data[i]  
-            return {"message": "Employee deleted successfully"}
-    return {"message": "Employee not found"}
-
-@app.patch("/update_patch/{employee_id}")
-async def update_employee(employee_id: int, updated_data: dict[str, str]):
-    employee_index = next((i for i, emp in enumerate(Employee_data) if emp["id"] == employee_id), None)
-    if employee_index is None:
-        raise HTTPException(status_code=404, detail=f"Employee with ID {employee_id} not found")
-
-    if not set(updated_data.keys()).issubset(VALID_EMPLOYEE_KEYS):
-        raise HTTPException(status_code=400, detail=f"Invalid update keys: {', '.join(set(updated_data.keys()) - VALID_EMPLOYEE_KEYS)}")
-
-    Employee_data[employee_index].update(updated_data)
-    return {"message": f"Employee with ID {employee_id} updated successfully"}
-
-@app.head("/head")
-async def head_endpoint():
-    return {"message": "This is a head-only endpoint"}
+def get_password_hash(password):
+    return pwd_context.hash(password)
 
 
+def get_user(db, username: str):
+    if username in db:
+        user_data = db[username]
+        return UserInDB(**user_data)
 
+
+def authenticate_user(db, username: str, password: str):
+    user = get_user(db, username)
+    if not user:
+        return False
+    if not verify_password(password, user.hashed_password):
+        return False
+
+    return user
+
+
+def create_access_token(data: dict, expires_delta: timedelta or None = None):
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=15)
+
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+
+async def get_current_user(token: str = Depends(oauth2_scheme)):
+    credential_exception = HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                                         detail="Could not validate credentials", headers={"WWW-Authenticate": "Bearer"})
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            raise credential_exception
+
+        token_data = TokenData(username=username)
+    except JWTError:
+        raise credential_exception
+
+    user = get_user(db, username=token_data.username)
+    if user is None:
+        raise credential_exception
+
+    return user
+
+
+async def get_current_active_user(current_user: UserInDB = Depends(get_current_user)):
+    if current_user.disabled:
+        raise HTTPException(status_code=400, detail="Inactive user")
+
+    return current_user
+
+
+@app.post("/token", response_model=Token)
+async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+    user = authenticate_user(db, form_data.username, form_data.password)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="Incorrect username or password", headers={"WWW-Authenticate": "Bearer"})
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user.username}, expires_delta=access_token_expires)
+    return {"access_token": access_token, "token_type": "bearer"}
+
+
+@app.get("/Employee/", response_model=User)
+async def read_users_me(current_user: User = Depends(get_current_active_user)):
+    return current_user
+
+
+@app.get("/Employee/")
+async def read_own_items(current_user: User = Depends(get_current_active_user)):
+    return [{"Emp_id": 1, "owner": current_user}]
+
+pwd = get_password_hash("123")
+print(pwd)
