@@ -36,14 +36,6 @@ async def delete_book_endpoint(request: RequestBook, db: Session = Depends(get_d
     remove_book(db, book_id=request.parameter.id)
     return Response(status="Ok", code="200", message="Success delete data")
 
-@router.post("/upload_pdf/")
-async def upload_pdf_endpoint(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    file_content = await save_uploaded_pdf(file)
-    new_book = Book(filename=file.filename, file_content=file_content)
-    db.add(new_book)
-    db.commit()
-    db.refresh(new_book)
-    return {"detail": "PDF file uploaded successfully", "filename": new_book.filename, "id": new_book.id}
 
 @router.post("/upload/")
 async def upload_multiple_files_endpoint(files: List[UploadFile] = File(...), db: Session = Depends(get_db)):
